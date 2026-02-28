@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Idea Platform</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header class="app-header">
+    <div class="header-inner">
+      <a href="#/" class="brand">💡 Idea Platform</a>
+      <nav class="breadcrumb" id="breadcrumb"></nav>
+    </div>
+  </header>
+
+  <main id="app">
+    <!-- Views are rendered here by app.js -->
+    <div class="loading">Loading…</div>
+  </main>
+
+  <!-- Modal for creating/editing -->
+  <div class="modal-overlay" id="modal-overlay" hidden>
+    <div class="modal" id="modal">
+      <div class="modal-header">
+        <h2 id="modal-title"></h2>
+        <button class="modal-close" id="modal-close">&times;</button>
+      </div>
+      <div class="modal-body" id="modal-body"></div>
+    </div>
+  </div>
+
+  <script src="/app.js"></script>
+</body>
+</html>
