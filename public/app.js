@@ -42,9 +42,25 @@ const modal = {
   hide() { this.overlay.hidden = true; this.bodyEl.innerHTML = ''; }
 };
 
+/* ===== Utilities ===== */
+function esc(s) {
+  return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+function formatDate(dt) {
+  if (!dt) return '';
+  const d = new Date(dt + (dt.endsWith('Z') ? '' : 'Z'));
+  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+}
+function render(html) {
+  document.getElementById('app').innerHTML = html;
+}
+
 /* ===== Breadcrumb ===== */
 function setBreadcrumb(items) {
+  const bar = document.getElementById('breadcrumb-bar');
   const el = document.getElementById('breadcrumb');
+  if (!items || items.length === 0) { bar.hidden = true; return; }
+  bar.hidden = false;
   el.innerHTML = items.map((item, i) => {
     const isLast = i === items.length - 1;
     if (isLast) return `<span class="current">${esc(item.label)}</span>`;
@@ -52,8 +68,39 @@ function setBreadcrumb(items) {
   }).join('');
 }
 
-function esc(s) {
-  return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+/* ===== Nav tab state ===== */
+function setActiveNav(view) {
+  document.querySelectorAll('.nav-tab').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.view === view);
+  });
+}
+
+/* ===== View state ===== */
+let viewMode = 'card'; // 'card' | 'list'
+
+function toggleViewMode(mode) {
+  viewMode = mode;
+  document.querySelectorAll('.view-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.mode === mode);
+  });
+  // Re-render current list area
+  const grid = document.querySelector('.card-grid');
+  const list = document.querySelector('.list-view');
+  if (mode === 'card') {
+    if (grid) grid.style.display = '';
+    if (list) list.style.display = 'none';
+  } else {
+    if (grid) grid.style.display = 'none';
+    if (list) list.style.display = '';
+  }
+}
+
+function viewToggleHtml() {
+  return `
+    <div class="view-toggle">
+      <button class="view-btn ${viewMode === 'card' ? 'active' : ''}" data-mode="card" title="Card view" onclick="toggleViewMode('card')">⊞</button>
+      <button class="view-btn ${viewMode === 'list' ? 'active' : ''}" data-mode="list" title="List view" onclick="toggleViewMode('list')">≡</button>
+    </div>`;
 }
 
 /* ===== Router ===== */
@@ -76,28 +123,55 @@ function route() {
 window.addEventListener('hashchange', route);
 document.addEventListener('DOMContentLoaded', () => { modal.init(); route(); });
 
-/* ===== Render helper ===== */
-function render(html) {
-  document.getElementById('app').innerHTML = html;
+/* ===== Top-level view switcher (nav tabs) ===== */
+async function switchView(view) {
+  setActiveNav(view);
+  setBreadcrumb([]);
+  if (view === 'focus-areas') {
+    location.hash = '#/';
+  } else if (view === 'challenges') {
+    await viewAllChallenges();
+  } else if (view === 'ideas') {
+    await viewAllIdeas();
+  }
 }
 
 /* ===== View: Home — Focus Areas ===== */
 async function viewHome() {
-  setBreadcrumb([{ label: 'Focus Areas', href: '#/' }]);
+  setActiveNav('focus-areas');
+  setBreadcrumb([]);
   render('<div class="loading">Loading…</div>');
   try {
     const areas = await api.get('/api/focus-areas');
-    const cards = areas.length ? areas.map(a => `
+
+    const cardItems = areas.map(a => `
       <div class="card" onclick="location.hash='#/focus/${a.id}'">
+        <div class="card-icon">🎯</div>
         <div class="card-title">${esc(a.name)}</div>
-        <div class="card-desc">${esc(a.description) || '<em>No description</em>'}</div>
+        <div class="card-desc">${esc(a.description) || '<em style="color:var(--text-subtle)">No description</em>'}</div>
         <div class="card-meta">
           <span class="badge">${a.challenge_count} challenge${a.challenge_count !== 1 ? 's' : ''}</span>
           <span>${formatDate(a.created_at)}</span>
         </div>
-      </div>`).join('') : `
-      <div class="empty-state" style="grid-column:1/-1">
-        <div class="icon">🎯</div>
+      </div>`).join('');
+
+    const listItems = areas.map(a => `
+      <div class="list-item" onclick="location.hash='#/focus/${a.id}'">
+        <div class="list-item-icon">🎯</div>
+        <div class="list-item-body">
+          <div class="list-item-title">${esc(a.name)}</div>
+          <div class="list-item-desc">${esc(a.description) || 'No description'}</div>
+        </div>
+        <div class="list-item-meta">
+          <span class="badge">${a.challenge_count} challenge${a.challenge_count !== 1 ? 's' : ''}</span>
+          <span>${formatDate(a.created_at)}</span>
+        </div>
+        <div class="list-item-arrow">›</div>
+      </div>`).join('');
+
+    const emptyState = `
+      <div class="empty-state">
+        <span class="icon">🎯</span>
         <h3>No focus areas yet</h3>
         <p>Focus areas help you organise challenges around a theme or goal.</p>
         <button class="btn btn-primary" onclick="showCreateFocusArea()">+ Create your first Focus Area</button>
@@ -105,13 +179,22 @@ async function viewHome() {
 
     render(`
       <div class="page-header">
-        <div>
+        <div class="page-header-text">
           <h1>Focus Areas</h1>
           <div class="subtitle">Organise your challenges by theme or goal</div>
         </div>
-        ${areas.length ? '<button class="btn btn-primary" onclick="showCreateFocusArea()">+ New Focus Area</button>' : ''}
+        <div class="page-header-actions">
+          ${areas.length ? '<button class="btn btn-primary" onclick="showCreateFocusArea()">+ New Focus Area</button>' : ''}
+        </div>
       </div>
-      <div class="card-grid">${cards}</div>`);
+      ${areas.length ? `
+      <div class="toolbar">
+        <div class="toolbar-filters"></div>
+        ${viewToggleHtml()}
+      </div>
+      <div class="card-grid" ${viewMode === 'list' ? 'style="display:none"' : ''}>${cardItems}</div>
+      <div class="list-view" ${viewMode === 'card' ? 'style="display:none"' : ''}>${listItems}</div>
+      ` : emptyState}`);
   } catch (e) {
     render(`<div class="empty-state"><h3>Error</h3><p>${esc(e.message)}</p></div>`);
   }
@@ -146,8 +229,177 @@ async function createFocusArea() {
   } catch (e) { alert(e.message); }
 }
 
+/* ===== View: All Challenges ===== */
+async function viewAllChallenges(filterFocusAreaId = '') {
+  setActiveNav('challenges');
+  setBreadcrumb([]);
+  render('<div class="loading">Loading…</div>');
+  try {
+    const areas = await api.get('/api/focus-areas');
+    // Fetch challenges for each focus area
+    const allChallenges = [];
+    await Promise.all(areas.map(async a => {
+      const chs = await api.get(`/api/focus-areas/${a.id}/challenges`);
+      chs.forEach(c => allChallenges.push({ ...c, focus_area_name: a.name, focus_area_id: a.id }));
+    }));
+
+    const filtered = filterFocusAreaId
+      ? allChallenges.filter(c => String(c.focus_area_id) === String(filterFocusAreaId))
+      : allChallenges;
+
+    const faOptions = areas.map(a => `<option value="${a.id}" ${String(a.id) === String(filterFocusAreaId) ? 'selected' : ''}>${esc(a.name)}</option>`).join('');
+
+    const cardItems = filtered.map(c => `
+      <div class="card" onclick="location.hash='#/challenge/${c.id}'">
+        <div class="card-icon">🔍</div>
+        <div class="card-title">${esc(c.name)}</div>
+        <div class="card-desc">${esc(c.description) || '<em style="color:var(--text-subtle)">No description</em>'}</div>
+        <div class="card-meta">
+          <span class="badge badge-neutral">${esc(c.focus_area_name)}</span>
+          <span class="badge">${c.idea_count ?? 0} idea${(c.idea_count ?? 0) !== 1 ? 's' : ''}</span>
+        </div>
+      </div>`).join('');
+
+    const listItems = filtered.map(c => `
+      <div class="list-item" onclick="location.hash='#/challenge/${c.id}'">
+        <div class="list-item-icon">🔍</div>
+        <div class="list-item-body">
+          <div class="list-item-title">${esc(c.name)}</div>
+          <div class="list-item-desc">${esc(c.description) || 'No description'}</div>
+        </div>
+        <div class="list-item-meta">
+          <span class="badge badge-neutral">${esc(c.focus_area_name)}</span>
+          <span class="badge">${c.idea_count ?? 0} idea${(c.idea_count ?? 0) !== 1 ? 's' : ''}</span>
+        </div>
+        <div class="list-item-arrow">›</div>
+      </div>`).join('');
+
+    const emptyState = `
+      <div class="empty-state">
+        <span class="icon">🔍</span>
+        <h3>No challenges found</h3>
+        <p>${filterFocusAreaId ? 'No challenges in this focus area yet.' : 'Create a focus area first, then add challenges.'}</p>
+      </div>`;
+
+    render(`
+      <div class="page-header">
+        <div class="page-header-text">
+          <h1>Challenges</h1>
+          <div class="subtitle">${filtered.length} challenge${filtered.length !== 1 ? 's' : ''} across all focus areas</div>
+        </div>
+      </div>
+      <div class="toolbar">
+        <div class="toolbar-filters">
+          <select class="filter-select" onchange="viewAllChallenges(this.value)">
+            <option value="">All Focus Areas</option>
+            ${faOptions}
+          </select>
+        </div>
+        ${viewToggleHtml()}
+      </div>
+      ${filtered.length ? `
+        <div class="card-grid" ${viewMode === 'list' ? 'style="display:none"' : ''}>${cardItems}</div>
+        <div class="list-view" ${viewMode === 'card' ? 'style="display:none"' : ''}>${listItems}</div>
+      ` : emptyState}`);
+  } catch (e) {
+    render(`<div class="empty-state"><h3>Error</h3><p>${esc(e.message)}</p></div>`);
+  }
+}
+
+/* ===== View: All Ideas ===== */
+async function viewAllIdeas(filterFocusAreaId = '', filterChallengeId = '') {
+  setActiveNav('ideas');
+  setBreadcrumb([]);
+  render('<div class="loading">Loading…</div>');
+  try {
+    const areas = await api.get('/api/focus-areas');
+    const allChallenges = [];
+    await Promise.all(areas.map(async a => {
+      const chs = await api.get(`/api/focus-areas/${a.id}/challenges`);
+      chs.forEach(c => allChallenges.push({ ...c, focus_area_name: a.name, focus_area_id: a.id }));
+    }));
+
+    const challengesToSearch = filterFocusAreaId
+      ? allChallenges.filter(c => String(c.focus_area_id) === String(filterFocusAreaId))
+      : allChallenges;
+
+    const allIdeas = [];
+    await Promise.all(challengesToSearch.map(async c => {
+      const ideas = await api.get(`/api/challenges/${c.id}/ideas`);
+      ideas.forEach(i => allIdeas.push({ ...i, challenge_name: c.name, challenge_id: c.id, focus_area_name: c.focus_area_name, focus_area_id: c.focus_area_id }));
+    }));
+
+    const filtered = filterChallengeId
+      ? allIdeas.filter(i => String(i.challenge_id) === String(filterChallengeId))
+      : allIdeas;
+
+    const faOptions = areas.map(a => `<option value="${a.id}" ${String(a.id) === String(filterFocusAreaId) ? 'selected' : ''}>${esc(a.name)}</option>`).join('');
+    const chOptions = challengesToSearch.map(c => `<option value="${c.id}" ${String(c.id) === String(filterChallengeId) ? 'selected' : ''}>${esc(c.name)}</option>`).join('');
+
+    const cardItems = filtered.map(i => `
+      <div class="card" onclick="location.hash='#/idea/${i.id}'">
+        <div class="card-icon">💡</div>
+        <div class="card-title">${i.name ? esc(i.name) : '<em style="color:var(--text-subtle)">Untitled idea</em>'}</div>
+        <div class="card-desc">${esc(i.description) || '<em style="color:var(--text-subtle)">No description yet</em>'}</div>
+        <div class="card-meta">
+          <span class="badge badge-neutral">${esc(i.challenge_name)}</span>
+          <span>${formatDate(i.updated_at || i.created_at)}</span>
+        </div>
+      </div>`).join('');
+
+    const listItems = filtered.map(i => `
+      <div class="list-item" onclick="location.hash='#/idea/${i.id}'">
+        <div class="list-item-icon">💡</div>
+        <div class="list-item-body">
+          <div class="list-item-title ${!i.name ? 'empty' : ''}">${i.name ? esc(i.name) : 'Untitled idea'}</div>
+          <div class="list-item-desc">${esc(i.description) || 'No description yet'}</div>
+        </div>
+        <div class="list-item-meta">
+          <span class="badge badge-neutral">${esc(i.challenge_name)}</span>
+          <span>${formatDate(i.updated_at || i.created_at)}</span>
+        </div>
+        <div class="list-item-arrow">›</div>
+      </div>`).join('');
+
+    const emptyState = `
+      <div class="empty-state">
+        <span class="icon">💡</span>
+        <h3>No ideas found</h3>
+        <p>${filterChallengeId || filterFocusAreaId ? 'No ideas match your current filter.' : 'Open a challenge and add ideas to get started.'}</p>
+      </div>`;
+
+    render(`
+      <div class="page-header">
+        <div class="page-header-text">
+          <h1>Ideas</h1>
+          <div class="subtitle">${filtered.length} idea${filtered.length !== 1 ? 's' : ''} across all challenges</div>
+        </div>
+      </div>
+      <div class="toolbar">
+        <div class="toolbar-filters">
+          <select class="filter-select" onchange="viewAllIdeas(this.value, '')">
+            <option value="">All Focus Areas</option>
+            ${faOptions}
+          </select>
+          <select class="filter-select" onchange="viewAllIdeas('${esc(filterFocusAreaId)}', this.value)">
+            <option value="">All Challenges</option>
+            ${chOptions}
+          </select>
+        </div>
+        ${viewToggleHtml()}
+      </div>
+      ${filtered.length ? `
+        <div class="card-grid" ${viewMode === 'list' ? 'style="display:none"' : ''}>${cardItems}</div>
+        <div class="list-view" ${viewMode === 'card' ? 'style="display:none"' : ''}>${listItems}</div>
+      ` : emptyState}`);
+  } catch (e) {
+    render(`<div class="empty-state"><h3>Error</h3><p>${esc(e.message)}</p></div>`);
+  }
+}
+
 /* ===== View: Focus Area detail ===== */
 async function viewFocusArea(id) {
+  setActiveNav('focus-areas');
   render('<div class="loading">Loading…</div>');
   try {
     const [fa, challenges] = await Promise.all([
@@ -160,17 +412,34 @@ async function viewFocusArea(id) {
       { label: fa.name, href: `#/focus/${id}` }
     ]);
 
-    const cards = challenges.length ? challenges.map(c => `
+    const cardItems = challenges.map(c => `
       <div class="card" onclick="location.hash='#/challenge/${c.id}'">
+        <div class="card-icon">🔍</div>
         <div class="card-title">${esc(c.name)}</div>
-        <div class="card-desc">${esc(c.description) || '<em>No description</em>'}</div>
+        <div class="card-desc">${esc(c.description) || '<em style="color:var(--text-subtle)">No description</em>'}</div>
         <div class="card-meta">
           <span class="badge">${c.idea_count} idea${c.idea_count !== 1 ? 's' : ''}</span>
           <span>${formatDate(c.created_at)}</span>
         </div>
-      </div>`).join('') : `
+      </div>`).join('');
+
+    const listItems = challenges.map(c => `
+      <div class="list-item" onclick="location.hash='#/challenge/${c.id}'">
+        <div class="list-item-icon">🔍</div>
+        <div class="list-item-body">
+          <div class="list-item-title">${esc(c.name)}</div>
+          <div class="list-item-desc">${esc(c.description) || 'No description'}</div>
+        </div>
+        <div class="list-item-meta">
+          <span class="badge">${c.idea_count} idea${c.idea_count !== 1 ? 's' : ''}</span>
+          <span>${formatDate(c.created_at)}</span>
+        </div>
+        <div class="list-item-arrow">›</div>
+      </div>`).join('');
+
+    const emptyState = `
       <div class="empty-state" style="grid-column:1/-1">
-        <div class="icon">🔍</div>
+        <span class="icon">🔍</span>
         <h3>No challenges yet</h3>
         <p>Challenges are problems or opportunities to tackle within this focus area.</p>
         <button class="btn btn-primary" onclick="showCreateChallenge(${id})">+ Add a Challenge</button>
@@ -178,19 +447,25 @@ async function viewFocusArea(id) {
 
     render(`
       <div class="page-header">
-        <div>
+        <div class="page-header-text">
           <h1>${esc(fa.name)}</h1>
           ${fa.description ? `<div class="subtitle">${esc(fa.description)}</div>` : ''}
         </div>
-        <div style="display:flex;gap:.5rem">
+        <div class="page-header-actions">
           <button class="btn btn-ghost btn-sm" onclick="showEditFocusArea(${id})">Edit</button>
           <button class="btn btn-danger btn-sm" onclick="deleteFocusArea(${id})">Delete</button>
           ${challenges.length ? `<button class="btn btn-primary" onclick="showCreateChallenge(${id})">+ New Challenge</button>` : ''}
         </div>
       </div>
       <div class="section">
-        <div class="section-header"><h2>Challenges</h2></div>
-        <div class="card-grid">${cards}</div>
+        <div class="section-header">
+          <h2>Challenges <span class="section-count">${challenges.length}</span></h2>
+          ${challenges.length ? `<div class="toolbar" style="margin:0">${viewToggleHtml()}</div>` : ''}
+        </div>
+        ${challenges.length ? `
+          <div class="card-grid" ${viewMode === 'list' ? 'style="display:none"' : ''}>${cardItems}</div>
+          <div class="list-view" ${viewMode === 'card' ? 'style="display:none"' : ''}>${listItems}</div>
+        ` : emptyState}
       </div>`);
   } catch (e) {
     render(`<div class="empty-state"><h3>Error</h3><p>${esc(e.message)}</p></div>`);
@@ -265,6 +540,7 @@ async function createChallenge(focusAreaId) {
 
 /* ===== View: Challenge detail ===== */
 async function viewChallenge(id) {
+  setActiveNav('challenges');
   render('<div class="loading">Loading…</div>');
   try {
     const [ch, ideas] = await Promise.all([
@@ -278,17 +554,32 @@ async function viewChallenge(id) {
       { label: ch.name, href: `#/challenge/${id}` }
     ]);
 
-    const ideaList = ideas.length ? ideas.map(idea => `
-      <div class="idea-item" onclick="location.hash='#/idea/${idea.id}'">
-        <div class="idea-item-icon">💡</div>
-        <div class="idea-item-body">
-          <div class="idea-item-title ${!idea.name ? 'empty' : ''}">${idea.name ? esc(idea.name) : 'Untitled idea'}</div>
-          <div class="idea-item-desc">${idea.description ? esc(idea.description) : 'No description yet — open to start coaching'}</div>
+    const cardItems = ideas.map(idea => `
+      <div class="card" onclick="location.hash='#/idea/${idea.id}'">
+        <div class="card-icon">💡</div>
+        <div class="card-title ${!idea.name ? 'empty' : ''}">${idea.name ? esc(idea.name) : '<em style="color:var(--text-subtle)">Untitled idea</em>'}</div>
+        <div class="card-desc">${esc(idea.description) || '<em style="color:var(--text-subtle)">No description yet — open to start coaching</em>'}</div>
+        <div class="card-meta">
+          <span>${formatDate(idea.updated_at || idea.created_at)}</span>
         </div>
-        <div class="idea-item-arrow">›</div>
-      </div>`).join('') : `
+      </div>`).join('');
+
+    const listItems = ideas.map(idea => `
+      <div class="list-item" onclick="location.hash='#/idea/${idea.id}'">
+        <div class="list-item-icon">💡</div>
+        <div class="list-item-body">
+          <div class="list-item-title ${!idea.name ? 'empty' : ''}">${idea.name ? esc(idea.name) : 'Untitled idea'}</div>
+          <div class="list-item-desc">${idea.description ? esc(idea.description) : 'No description yet — open to start coaching'}</div>
+        </div>
+        <div class="list-item-meta">
+          <span>${formatDate(idea.updated_at || idea.created_at)}</span>
+        </div>
+        <div class="list-item-arrow">›</div>
+      </div>`).join('');
+
+    const emptyState = `
       <div class="empty-state">
-        <div class="icon">💡</div>
+        <span class="icon">💡</span>
         <h3>No ideas yet</h3>
         <p>Add an idea and the AI coach will guide you through developing it.</p>
         <button class="btn btn-primary" onclick="createIdea(${id})">+ Add First Idea</button>
@@ -296,19 +587,25 @@ async function viewChallenge(id) {
 
     render(`
       <div class="page-header">
-        <div>
+        <div class="page-header-text">
           <h1>${esc(ch.name)}</h1>
           ${ch.description ? `<div class="subtitle">${esc(ch.description)}</div>` : ''}
         </div>
-        <div style="display:flex;gap:.5rem">
+        <div class="page-header-actions">
           <button class="btn btn-ghost btn-sm" onclick="showEditChallenge(${id})">Edit</button>
           <button class="btn btn-danger btn-sm" onclick="deleteChallenge(${id}, ${ch.focus_area_id})">Delete</button>
           ${ideas.length ? `<button class="btn btn-primary" onclick="createIdea(${id})">+ New Idea</button>` : ''}
         </div>
       </div>
       <div class="section">
-        <div class="section-header"><h2>Ideas</h2></div>
-        ${ideaList}
+        <div class="section-header">
+          <h2>Ideas <span class="section-count">${ideas.length}</span></h2>
+          ${ideas.length ? `<div class="toolbar" style="margin:0">${viewToggleHtml()}</div>` : ''}
+        </div>
+        ${ideas.length ? `
+          <div class="card-grid" ${viewMode === 'list' ? 'style="display:none"' : ''}>${cardItems}</div>
+          <div class="list-view" ${viewMode === 'card' ? 'style="display:none"' : ''}>${listItems}</div>
+        ` : emptyState}
       </div>`);
   } catch (e) {
     render(`<div class="empty-state"><h3>Error</h3><p>${esc(e.message)}</p></div>`);
@@ -360,9 +657,10 @@ async function createIdea(challengeId) {
 }
 
 /* ===== View: Idea Coach ===== */
-let coachState = { ideaId: null, streaming: false, pendingSave: false };
+let coachState = { ideaId: null, streaming: false };
 
 async function viewIdea(id) {
+  setActiveNav('ideas');
   render('<div class="loading">Loading…</div>');
   try {
     const idea = await api.get(`/api/ideas/${id}`);
@@ -378,14 +676,15 @@ async function viewIdea(id) {
 
     render(`
       <div class="page-header" style="margin-bottom:1rem">
-        <div>
+        <div class="page-header-text">
           <h1>${idea.name ? esc(idea.name) : 'New Idea'}</h1>
           <div class="subtitle">Challenge: <strong>${esc(idea.challenge_name)}</strong></div>
         </div>
-        <button class="btn btn-danger btn-sm" onclick="deleteIdea(${id}, ${idea.challenge_id})">Delete Idea</button>
+        <div class="page-header-actions">
+          <button class="btn btn-danger btn-sm" onclick="deleteIdea(${id}, ${idea.challenge_id})">Delete Idea</button>
+        </div>
       </div>
       <div class="coach-layout">
-        <!-- Chat panel -->
         <div class="chat-panel">
           <div class="chat-header">
             <span class="coach-icon">🤖</span>
@@ -397,8 +696,6 @@ async function viewIdea(id) {
             <button id="chat-send" class="chat-send" title="Send (Enter)">➤</button>
           </div>
         </div>
-
-        <!-- Idea fields panel -->
         <div class="idea-panel">
           <div class="idea-panel-header">📋 Idea Details</div>
           <div class="idea-panel-body">
@@ -433,25 +730,18 @@ async function viewIdea(id) {
         </div>
       </div>`);
 
-    // Render existing conversation
     const messagesEl = document.getElementById('chat-messages');
     if (idea.conversation && idea.conversation.length > 0) {
       idea.conversation.forEach(msg => appendMessage(msg.role, msg.content));
       messagesEl.scrollTop = messagesEl.scrollHeight;
     } else {
-      // Auto-start with coach's first message
       await sendCoachMessage(id, null);
     }
 
-    // Input event listeners
     const input = document.getElementById('chat-input');
     const sendBtn = document.getElementById('chat-send');
-
     input.addEventListener('keydown', e => {
-      if (e.key === 'Enter' && !e.shiftKey) {
-        e.preventDefault();
-        handleSend(id);
-      }
+      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(id); }
     });
     input.addEventListener('input', () => {
       input.style.height = 'auto';
@@ -459,12 +749,10 @@ async function viewIdea(id) {
     });
     sendBtn.addEventListener('click', () => handleSend(id));
 
-    // Field change listeners — save on blur
     ['name','description','problem_what','problem_who','problem_scale','benefits'].forEach(f => {
       const el = document.getElementById(`field-${f}`);
       if (el) el.addEventListener('change', () => saveIdeaFields(id));
     });
-
   } catch (e) {
     render(`<div class="empty-state"><h3>Error</h3><p>${esc(e.message)}</p></div>`);
   }
@@ -494,10 +782,7 @@ function updateStreamingMessage(text) {
 
 function finalizeStreamingMessage() {
   const el = document.getElementById('streaming-msg');
-  if (el) {
-    el.id = '';
-    el.classList.remove('message-typing');
-  }
+  if (el) { el.id = ''; el.classList.remove('message-typing'); }
 }
 
 function setInputEnabled(enabled) {
@@ -512,63 +797,46 @@ async function handleSend(ideaId) {
   const input = document.getElementById('chat-input');
   const text = input?.value?.trim();
   if (!text) return;
-
   input.value = '';
   input.style.height = 'auto';
   appendMessage('user', text);
-
   await sendCoachMessage(ideaId, text);
 }
 
 async function sendCoachMessage(ideaId, message) {
   coachState.streaming = true;
   setInputEnabled(false);
-
-  // Show streaming placeholder
   appendMessage('assistant', '', true);
   let accumulated = '';
-
   try {
     const resp = await fetch(`/api/ideas/${ideaId}/coach`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ message: message || '' })
     });
-
     if (!resp.ok) throw new Error('Coach request failed');
 
     const reader = resp.body.getReader();
     const decoder = new TextDecoder();
     let buffer = '';
-
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
       buffer += decoder.decode(value, { stream: true });
       const lines = buffer.split('\n');
       buffer = lines.pop();
-
       for (const line of lines) {
         if (!line.startsWith('data: ')) continue;
         try {
           const event = JSON.parse(line.slice(6));
-          if (event.type === 'token') {
-            accumulated += event.text;
-            updateStreamingMessage(accumulated);
-          } else if (event.type === 'done') {
-            finalizeStreamingMessage();
-          } else if (event.type === 'error') {
-            throw new Error(event.message);
-          }
-        } catch (parseErr) { /* skip malformed events */ }
+          if (event.type === 'token') { accumulated += event.text; updateStreamingMessage(accumulated); }
+          else if (event.type === 'done') { finalizeStreamingMessage(); }
+          else if (event.type === 'error') { throw new Error(event.message); }
+        } catch (parseErr) { /* skip malformed */ }
       }
     }
-
     finalizeStreamingMessage();
-
-    // Extract structured fields after each coach message
     triggerExtract(ideaId);
-
   } catch (e) {
     finalizeStreamingMessage();
     updateStreamingMessage(`(Error: ${e.message})`);
@@ -583,8 +851,7 @@ async function sendCoachMessage(ideaId, message) {
 async function triggerExtract(ideaId) {
   try {
     const fields = await api.post(`/api/ideas/${ideaId}/extract`, {});
-    const fieldNames = ['name', 'description', 'problem_what', 'problem_who', 'problem_scale', 'benefits'];
-    fieldNames.forEach(f => {
+    ['name','description','problem_what','problem_who','problem_scale','benefits'].forEach(f => {
       const el = document.getElementById(`field-${f}`);
       if (el && fields[f] && fields[f] !== el.value) {
         el.value = fields[f];
@@ -592,29 +859,22 @@ async function triggerExtract(ideaId) {
         setTimeout(() => el.classList.remove('updated'), 1200);
       }
     });
-
-    // Update page title if name was extracted
     if (fields.name) {
-      const h1 = document.querySelector('.page-header h1');
+      const h1 = document.querySelector('.page-header-text h1');
       if (h1) h1.textContent = fields.name;
     }
-  } catch (e) {
-    console.warn('Field extraction failed:', e.message);
-  }
+  } catch (e) { console.warn('Field extraction failed:', e.message); }
 }
 
 async function saveIdeaFields(id) {
-  const fields = ['name', 'description', 'problem_what', 'problem_who', 'problem_scale', 'benefits'];
+  const fields = ['name','description','problem_what','problem_who','problem_scale','benefits'];
   const body = {};
   fields.forEach(f => {
     const el = document.getElementById(`field-${f}`);
     if (el) body[f] = el.value.trim();
   });
-  try {
-    await api.put(`/api/ideas/${id}`, body);
-  } catch (e) {
-    console.warn('Save failed:', e.message);
-  }
+  try { await api.put(`/api/ideas/${id}`, body); }
+  catch (e) { console.warn('Save failed:', e.message); }
 }
 
 async function deleteIdea(id, challengeId) {
@@ -623,11 +883,4 @@ async function deleteIdea(id, challengeId) {
     await api.del(`/api/ideas/${id}`);
     location.hash = `#/challenge/${challengeId}`;
   } catch (e) { alert(e.message); }
-}
-
-/* ===== Utilities ===== */
-function formatDate(dt) {
-  if (!dt) return '';
-  const d = new Date(dt + (dt.endsWith('Z') ? '' : 'Z'));
-  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
 }
