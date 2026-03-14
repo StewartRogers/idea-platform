@@ -1,26 +1,38 @@
 /* ===== API helpers ===== */
+async function _parseError(r) {
+  try { return (await r.json()).error || r.statusText; } catch { return r.statusText || 'Request failed'; }
+}
 const api = {
   async get(url) {
-    const r = await fetch(url);
-    if (!r.ok) throw new Error((await r.json()).error || r.statusText);
+    let r;
+    try { r = await fetch(url); } catch { throw new Error('Could not connect to the server. Please check your connection.'); }
+    if (!r.ok) throw new Error(await _parseError(r));
     return r.json();
   },
   async post(url, body) {
-    const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-    if (!r.ok) throw new Error((await r.json()).error || r.statusText);
+    let r;
+    try { r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }); } catch { throw new Error('Could not connect to the server. Please check your connection.'); }
+    if (!r.ok) throw new Error(await _parseError(r));
     return r.json();
   },
   async put(url, body) {
-    const r = await fetch(url, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-    if (!r.ok) throw new Error((await r.json()).error || r.statusText);
+    let r;
+    try { r = await fetch(url, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }); } catch { throw new Error('Could not connect to the server. Please check your connection.'); }
+    if (!r.ok) throw new Error(await _parseError(r));
     return r.json();
   },
   async del(url) {
-    const r = await fetch(url, { method: 'DELETE' });
-    if (!r.ok) throw new Error((await r.json()).error || r.statusText);
+    let r;
+    try { r = await fetch(url, { method: 'DELETE' }); } catch { throw new Error('Could not connect to the server. Please check your connection.'); }
+    if (!r.ok) throw new Error(await _parseError(r));
     return r.json();
   }
 };
+
+/* ===== Modal loading state ===== */
+function setModalLoading(loading) {
+  document.querySelectorAll('#modal-body button').forEach(b => { b.disabled = loading; });
+}
 
 /* ===== Modal ===== */
 const modal = {
@@ -76,10 +88,11 @@ function setActiveNav(view) {
 }
 
 /* ===== View state ===== */
-let viewMode = 'card'; // 'card' | 'list'
+let viewMode = localStorage.getItem('viewMode') || 'card'; // 'card' | 'list'
 
 function toggleViewMode(mode) {
   viewMode = mode;
+  localStorage.setItem('viewMode', mode);
   document.querySelectorAll('.view-btn').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.mode === mode);
   });
@@ -196,7 +209,7 @@ async function viewHome() {
       <div class="list-view" ${viewMode === 'card' ? 'style="display:none"' : ''}>${listItems}</div>
       ` : emptyState}`);
   } catch (e) {
-    render(`<div class="empty-state"><h3>Error</h3><p>${esc(e.message)}</p></div>`);
+    render(`<div class="empty-state"><h3>Something went wrong</h3><p>${esc(e.message)}</p></div>`);
   }
 }
 
@@ -222,11 +235,12 @@ async function createFocusArea() {
   const name = document.getElementById('fa-name')?.value?.trim();
   const description = document.getElementById('fa-desc')?.value?.trim();
   if (!name) { alert('Name is required'); return; }
+  setModalLoading(true);
   try {
     const fa = await api.post('/api/focus-areas', { name, description });
     modal.hide();
     location.hash = `#/focus/${fa.id}`;
-  } catch (e) { alert(e.message); }
+  } catch (e) { setModalLoading(false); alert(e.message); }
 }
 
 /* ===== View: All Challenges ===== */
@@ -302,7 +316,7 @@ async function viewAllChallenges(filterFocusAreaId = '') {
         <div class="list-view" ${viewMode === 'card' ? 'style="display:none"' : ''}>${listItems}</div>
       ` : emptyState}`);
   } catch (e) {
-    render(`<div class="empty-state"><h3>Error</h3><p>${esc(e.message)}</p></div>`);
+    render(`<div class="empty-state"><h3>Something went wrong</h3><p>${esc(e.message)}</p></div>`);
   }
 }
 
@@ -393,7 +407,7 @@ async function viewAllIdeas(filterFocusAreaId = '', filterChallengeId = '') {
         <div class="list-view" ${viewMode === 'card' ? 'style="display:none"' : ''}>${listItems}</div>
       ` : emptyState}`);
   } catch (e) {
-    render(`<div class="empty-state"><h3>Error</h3><p>${esc(e.message)}</p></div>`);
+    render(`<div class="empty-state"><h3>Something went wrong</h3><p>${esc(e.message)}</p></div>`);
   }
 }
 
@@ -468,7 +482,7 @@ async function viewFocusArea(id) {
         ` : emptyState}
       </div>`);
   } catch (e) {
-    render(`<div class="empty-state"><h3>Error</h3><p>${esc(e.message)}</p></div>`);
+    render(`<div class="empty-state"><h3>Something went wrong</h3><p>${esc(e.message)}</p></div>`);
   }
 }
 
@@ -494,11 +508,12 @@ async function updateFocusArea(id) {
   const name = document.getElementById('fa-name')?.value?.trim();
   const description = document.getElementById('fa-desc')?.value?.trim();
   if (!name) { alert('Name is required'); return; }
+  setModalLoading(true);
   try {
     await api.put(`/api/focus-areas/${id}`, { name, description });
     modal.hide();
     viewFocusArea(id);
-  } catch (e) { alert(e.message); }
+  } catch (e) { setModalLoading(false); alert(e.message); }
 }
 
 async function deleteFocusArea(id) {
@@ -531,11 +546,12 @@ async function createChallenge(focusAreaId) {
   const name = document.getElementById('ch-name')?.value?.trim();
   const description = document.getElementById('ch-desc')?.value?.trim();
   if (!name) { alert('Name is required'); return; }
+  setModalLoading(true);
   try {
     const ch = await api.post(`/api/focus-areas/${focusAreaId}/challenges`, { name, description });
     modal.hide();
     location.hash = `#/challenge/${ch.id}`;
-  } catch (e) { alert(e.message); }
+  } catch (e) { setModalLoading(false); alert(e.message); }
 }
 
 /* ===== View: Challenge detail ===== */
@@ -582,7 +598,7 @@ async function viewChallenge(id) {
         <span class="icon">💡</span>
         <h3>No ideas yet</h3>
         <p>Add an idea and the AI coach will guide you through developing it.</p>
-        <button class="btn btn-primary" onclick="createIdea(${id})">+ Add First Idea</button>
+        <button class="btn btn-primary" onclick="createIdea(${id}, this)">+ Add First Idea</button>
       </div>`;
 
     render(`
@@ -594,7 +610,7 @@ async function viewChallenge(id) {
         <div class="page-header-actions">
           <button class="btn btn-ghost btn-sm" onclick="showEditChallenge(${id})">Edit</button>
           <button class="btn btn-danger btn-sm" onclick="deleteChallenge(${id}, ${ch.focus_area_id})">Delete</button>
-          ${ideas.length ? `<button class="btn btn-primary" onclick="createIdea(${id})">+ New Idea</button>` : ''}
+          ${ideas.length ? `<button class="btn btn-primary" onclick="createIdea(${id}, this)">+ New Idea</button>` : ''}
         </div>
       </div>
       <div class="section">
@@ -608,7 +624,7 @@ async function viewChallenge(id) {
         ` : emptyState}
       </div>`);
   } catch (e) {
-    render(`<div class="empty-state"><h3>Error</h3><p>${esc(e.message)}</p></div>`);
+    render(`<div class="empty-state"><h3>Something went wrong</h3><p>${esc(e.message)}</p></div>`);
   }
 }
 
@@ -634,11 +650,12 @@ async function updateChallenge(id) {
   const name = document.getElementById('ch-name')?.value?.trim();
   const description = document.getElementById('ch-desc')?.value?.trim();
   if (!name) { alert('Name is required'); return; }
+  setModalLoading(true);
   try {
     await api.put(`/api/challenges/${id}`, { name, description });
     modal.hide();
     viewChallenge(id);
-  } catch (e) { alert(e.message); }
+  } catch (e) { setModalLoading(false); alert(e.message); }
 }
 
 async function deleteChallenge(id, focusAreaId) {
@@ -649,11 +666,12 @@ async function deleteChallenge(id, focusAreaId) {
   } catch (e) { alert(e.message); }
 }
 
-async function createIdea(challengeId) {
+async function createIdea(challengeId, btn) {
+  if (btn) btn.disabled = true;
   try {
     const idea = await api.post(`/api/challenges/${challengeId}/ideas`, {});
     location.hash = `#/idea/${idea.id}`;
-  } catch (e) { alert(e.message); }
+  } catch (e) { if (btn) btn.disabled = false; alert(e.message); }
 }
 
 /* ===== View: Idea Coach ===== */
@@ -754,7 +772,7 @@ async function viewIdea(id) {
       if (el) el.addEventListener('change', () => saveIdeaFields(id));
     });
   } catch (e) {
-    render(`<div class="empty-state"><h3>Error</h3><p>${esc(e.message)}</p></div>`);
+    render(`<div class="empty-state"><h3>Something went wrong</h3><p>${esc(e.message)}</p></div>`);
   }
 }
 

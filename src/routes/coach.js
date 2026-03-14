@@ -67,7 +67,12 @@ router.post('/:id/coach', async (req, res) => {
 
   if (!idea) return res.status(404).json({ error: 'Idea not found' });
 
+  const MAX_MESSAGES = 100; // 50 back-and-forth exchanges
   const conversation = JSON.parse(idea.conversation || '[]');
+  if (conversation.length >= MAX_MESSAGES) {
+    return res.status(400).json({ error: 'Conversation limit reached. This idea has a very long coaching history — consider starting a new idea to continue exploring.' });
+  }
+
   const { message } = req.body;
 
   // Add user message if provided
@@ -93,7 +98,7 @@ router.post('/:id/coach', async (req, res) => {
     const history = geminiHistory.slice(0, -1);
 
     const model = genAI.getGenerativeModel({
-      model: 'gemini-2.0-flash',
+      model: 'gemini-3.1-flash-lite-preview',
       systemInstruction: buildSystemPrompt(idea)
     });
 
@@ -137,7 +142,7 @@ router.post('/:id/extract', async (req, res) => {
 
   try {
     const extractModel = genAI.getGenerativeModel({
-      model: 'gemini-2.0-flash',
+      model: 'gemini-3.1-flash-lite-preview',
       generationConfig: {
         responseMimeType: 'application/json',
         responseSchema: EXTRACT_SCHEMA

@@ -37,6 +37,7 @@ router.put('/:id', (req, res) => {
   const { name, description } = req.body;
   const existing = db.prepare('SELECT * FROM focus_areas WHERE id = ?').get(req.params.id);
   if (!existing) return res.status(404).json({ error: 'Not found' });
+  if (name !== undefined && !String(name).trim()) return res.status(400).json({ error: 'Name cannot be empty' });
   db.prepare(
     'UPDATE focus_areas SET name = ?, description = ? WHERE id = ?'
   ).run(name?.trim() ?? existing.name, description?.trim() ?? existing.description, req.params.id);

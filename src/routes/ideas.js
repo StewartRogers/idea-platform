@@ -22,6 +22,7 @@ router.put('/:id', (req, res) => {
   const fields = ['name', 'description', 'problem_what', 'problem_who', 'problem_scale', 'benefits'];
   const existing = db.prepare('SELECT * FROM ideas WHERE id = ?').get(req.params.id);
   if (!existing) return res.status(404).json({ error: 'Not found' });
+  // name is optional on ideas (they start untitled) but if provided must not be blank whitespace only
 
   const updates = {};
   fields.forEach(f => { updates[f] = req.body[f] ?? existing[f]; });
@@ -56,5 +57,8 @@ router.put('/:id/conversation', (req, res) => {
     .run(JSON.stringify(conversation), req.params.id);
   res.json({ saved: true });
 });
+
+// Mount coach routes (/api/ideas/:id/coach and /api/ideas/:id/extract)
+router.use(require('./coach'));
 
 module.exports = router;
