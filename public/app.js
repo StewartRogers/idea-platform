@@ -723,7 +723,7 @@ async function viewIdea(id) {
             </div>
             <div class="idea-field">
               <label>Description</label>
-              <textarea id="field-description" rows="2" placeholder="What is this idea?">${esc(idea.description)}</textarea>
+              <textarea id="field-description" rows="5" placeholder="What is this idea?">${esc(idea.description)}</textarea>
             </div>
             <div class="idea-field">
               <label>Problem — What</label>
