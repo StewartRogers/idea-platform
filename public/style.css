@@ -537,17 +537,15 @@ textarea.form-control { resize: vertical; min-height: 84px; }
 
 /* ===== Coach View ===== */
 .coach-layout {
-  display: grid;
-  grid-template-columns: 1fr 340px;
-  gap: 1.25rem;
-  height: calc(100vh - var(--header-h) - var(--breadcrumb-h) - 130px);
-  min-height: 480px;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
 }
 @media (max-width: 860px) {
-  .coach-layout { grid-template-columns: 1fr; height: auto; }
+  .coach-layout { gap: 0.75rem; }
 }
 
-/* Chat panel */
+/* Chat panel — compact strip at bottom */
 .chat-panel {
   background: var(--surface);
   border: 1px solid var(--border);
@@ -556,19 +554,22 @@ textarea.form-control { resize: vertical; min-height: 84px; }
   flex-direction: column;
   overflow: hidden;
   box-shadow: var(--shadow);
+  height: 240px;
+  flex-shrink: 0;
 }
 .chat-header {
-  padding: 0.9rem 1.25rem;
+  padding: 0.6rem 1.25rem;
   border-bottom: 1px solid var(--border);
   display: flex;
   align-items: center;
   gap: 0.6rem;
   background: var(--surface-2);
+  flex-shrink: 0;
 }
 .chat-header .coach-icon {
-  font-size: 1.25rem;
-  width: 34px;
-  height: 34px;
+  font-size: 1rem;
+  width: 28px;
+  height: 28px;
   background: var(--primary-light);
   border-radius: 50%;
   display: flex;
@@ -576,14 +577,14 @@ textarea.form-control { resize: vertical; min-height: 84px; }
   justify-content: center;
   flex-shrink: 0;
 }
-.chat-header h2 { font-size: 0.95rem; font-weight: 600; }
+.chat-header h2 { font-size: 0.875rem; font-weight: 600; }
 .chat-messages {
   flex: 1;
   overflow-y: auto;
-  padding: 1.25rem 1rem;
+  padding: 0.75rem 1rem;
   display: flex;
   flex-direction: column;
-  gap: 1rem;
+  gap: 0.6rem;
 }
 .message {
   display: flex;
@@ -606,11 +607,11 @@ textarea.form-control { resize: vertical; min-height: 84px; }
 .message.assistant .message-avatar { background: var(--primary-light); }
 .message.user .message-avatar { background: #dbeafe; }
 .message-bubble {
-  max-width: 72%;
-  padding: 0.7rem 1rem;
-  border-radius: 14px;
-  font-size: 0.9rem;
-  line-height: 1.6;
+  max-width: 80%;
+  padding: 0.5rem 0.85rem;
+  border-radius: 12px;
+  font-size: 0.875rem;
+  line-height: 1.5;
   white-space: pre-wrap;
   word-break: break-word;
 }
@@ -672,6 +673,14 @@ textarea.form-control { resize: vertical; min-height: 84px; }
 .chat-send:active:not(:disabled) { transform: scale(0.95); }
 .chat-send:disabled { opacity: 0.45; cursor: not-allowed; }
 
+/* Chat header with stage subtitle */
+.chat-header-text { display: flex; flex-direction: column; gap: 0.05rem; }
+.coach-stage-label {
+  font-size: 0.73rem;
+  color: var(--text-muted);
+  font-weight: 400;
+}
+
 /* Idea fields panel */
 .idea-panel {
   background: var(--surface);
@@ -683,61 +692,214 @@ textarea.form-control { resize: vertical; min-height: 84px; }
   box-shadow: var(--shadow);
 }
 .idea-panel-header {
-  padding: 0.9rem 1.25rem;
+  padding: 0.75rem 1.25rem;
   border-bottom: 1px solid var(--border);
   font-size: 0.92rem;
   font-weight: 600;
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 0.5rem;
   background: var(--surface-2);
 }
-.idea-panel-body {
-  flex: 1;
-  overflow-y: auto;
-  padding: 1rem 1.25rem;
-}
-.idea-field { margin-bottom: 1rem; }
-.idea-field label {
-  display: block;
+.stage-counter {
   font-size: 0.72rem;
+  color: var(--text-muted);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 100px;
+  padding: 0.15rem 0.6rem;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+/* Stage progress bar */
+.stage-bar {
+  height: 3px;
+  background: var(--border);
+  flex-shrink: 0;
+}
+.stage-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--primary), var(--primary-mid));
+  transition: width 0.4s ease;
+}
+
+.idea-panel-body {
+  padding: 0.85rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+/* 2-col grid for completed fields */
+.fields-done-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem;
+}
+@media (max-width: 640px) {
+  .fields-done-grid { grid-template-columns: 1fr; }
+}
+
+/* Completed field — readable text block */
+.field-done {
+  padding: 0.65rem 0.85rem;
+  border-radius: 8px;
+  background: var(--surface-2);
+  border: 1px solid var(--border-subtle);
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+.field-done:hover { border-color: var(--border); background: #f0f4ff; }
+.field-done-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.3rem;
+}
+.field-done-label {
+  font-size: 0.7rem;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  color: var(--text-muted);
-  margin-bottom: 0.3rem;
+  color: var(--success);
 }
-.idea-field textarea {
+.field-edit-hint {
+  font-size: 0.7rem;
+  color: var(--text-subtle);
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.field-done:hover .field-edit-hint { opacity: 1; }
+.field-done-value {
+  font-size: 0.875rem;
+  color: var(--text);
+  line-height: 1.55;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.field-done-value em { color: var(--text-subtle); font-style: italic; }
+
+/* Current active field */
+.field-current {
+  background: var(--primary-light);
+  border: 1.5px solid var(--primary);
+  border-radius: 10px;
+  padding: 0.85rem;
+}
+.field-current-label {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--primary);
+  margin-bottom: 0.5rem;
+}
+.field-current-textarea {
   width: 100%;
-  padding: 0.5rem 0.7rem;
-  border: 1px solid var(--border);
+  padding: 0.55rem 0.75rem;
+  border: 1px solid rgba(79,70,229,0.25);
   border-radius: 7px;
-  font-size: 0.85rem;
+  font-size: 0.875rem;
   font-family: inherit;
   resize: vertical;
-  min-height: 56px;
+  background: var(--surface);
   color: var(--text);
-  background: var(--surface-2);
-  transition: border-color 0.15s, background 0.15s;
+  line-height: 1.55;
+  transition: border-color 0.15s, box-shadow 0.15s;
+  margin-bottom: 0.65rem;
+  display: block;
 }
-.idea-field textarea:focus {
+.field-current-textarea:focus {
   outline: none;
   border-color: var(--primary);
-  background: var(--surface);
+  box-shadow: 0 0 0 3px rgba(79,70,229,.1);
 }
-.idea-field textarea.updated {
-  border-color: var(--success);
-  animation: flash-green 1.2s ease;
-}
-@keyframes flash-green {
-  0% { background: var(--success-light); }
-  100% { background: var(--surface-2); }
-}
-.idea-panel-footer {
-  padding: 0.875rem 1.25rem;
-  border-top: 1px solid var(--border);
+.field-next-btn { width: 100%; justify-content: center; }
+
+/* Upcoming fields — pill row */
+.field-upcoming-group {
   display: flex;
-  gap: 0.5rem;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  padding: 0.1rem 0;
+}
+.field-upcoming-pill {
+  font-size: 0.73rem;
+  color: var(--text-subtle);
+  background: var(--surface-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: 100px;
+  padding: 0.2rem 0.65rem;
+}
+
+/* All-complete state */
+.stage-complete {
+  text-align: center;
+  padding: 1.75rem 1rem;
+}
+.stage-complete-icon { font-size: 2.25rem; margin-bottom: 0.5rem; }
+.stage-complete-text {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--success);
+  margin-bottom: 1rem;
+}
+
+/* ===== Auth modal ===== */
+.auth-tabs {
+  display: flex;
+  border-bottom: 1px solid var(--border);
+  margin: -1.5rem -1.5rem 1.25rem;
+  padding: 0 1.5rem;
+}
+.auth-tab {
+  padding: 0.75rem 1rem;
+  border: none;
+  background: transparent;
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--text-muted);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  transition: color 0.15s, border-color 0.15s;
+  font-family: inherit;
+}
+.auth-tab:hover { color: var(--text); }
+.auth-tab.active { color: var(--primary); border-bottom-color: var(--primary); }
+.auth-error {
+  font-size: 0.85rem;
+  color: var(--danger);
+  margin-bottom: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  background: #fef2f2;
+  border-radius: 6px;
+  border: 1px solid #fecaca;
+}
+.user-email {
+  font-size: 0.82rem;
+  cursor: default;
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Read-only banner on idea view */
+.readonly-banner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  padding: 0.75rem 1.25rem;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  font-size: 0.875rem;
+  color: var(--text-muted);
+  flex-shrink: 0;
 }
 
 /* ===== Loading ===== */

@@ -5,33 +5,39 @@ const db = require('../database');
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
-function buildSystemPrompt(challenge) {
-  return `You are an expert idea coach with broad knowledge of business, technology, social trends, and research. You help people develop their ideas through a genuinely bi-directional conversation.
+const STAGES = [
+  { key: 'name',          label: 'Idea Name',         instruction: 'Help the user find a concise, memorable name. Explore a few options together, discuss what different names convey, and help them settle on something that captures the essence of the idea.' },
+  { key: 'description',   label: 'Description',        instruction: 'Build a rich understanding of what the idea is and the vision behind it. Ask about how it works, what makes it different, and what inspired it. The goal is two substantial paragraphs of insight.' },
+  { key: 'problem_what',  label: 'Problem — What',     instruction: 'Get specific about the problem being solved. Push past vague answers — ask for concrete examples, specific pain points, and what currently happens without this solution.' },
+  { key: 'problem_who',   label: 'Problem — Who',      instruction: 'Identify exactly who is affected. Explore demographics, contexts, and specific groups. Help the user get precise rather than saying "everyone".' },
+  { key: 'problem_scale', label: 'Problem — Scale',    instruction: 'Explore the significance and breadth of this problem. Share any relevant statistics or research you know about. Help the user articulate how widespread or impactful this problem truly is.' },
+  { key: 'benefits',      label: 'Potential Benefits', instruction: 'Explore the positive outcomes this idea would create. Go beyond the obvious — think about second-order effects, who benefits most, and what change in the world this idea enables.' },
+];
+
+function buildSystemPrompt(challenge, stage) {
+  const currentStage = STAGES[stage];
+  const stageFocus = currentStage
+    ? `\n\n**Current coaching focus**: Stage ${stage + 1} of ${STAGES.length} — "${currentStage.label}"
+${currentStage.instruction}
+
+Stay focused on this one topic until it is well covered. The user will tell you when they are ready to move on.`
+    : `\n\n**All stages complete.** Give the user a warm, encouraging summary of their fully developed idea, highlighting its strengths.`;
+
+  return `You are an expert idea coach with broad knowledge of business, technology, social trends, and research. You help people develop their ideas through a genuinely bi-directional conversation.${stageFocus}
 
 Context:
 - Challenge they are addressing: "${challenge.name}"
 - Challenge description: "${challenge.challenge_description || 'Not specified'}"
 - Focus area: "${challenge.focus_area_name}"
 
-Your goal is to guide the user through developing their idea by capturing these key elements through natural conversation:
-1. **Idea Name** - a concise, memorable name
-2. **Description** - a rich, detailed explanation of the idea (two full paragraphs)
-3. **Problem - What** - what specific problem does this solve?
-4. **Problem - Who** - who is affected by this problem?
-5. **Problem - Scale** - how significant or widespread is this problem?
-6. **Potential Benefits** - what positive outcomes would this idea create?
-
-Your coaching style is **bi-directional** — every response should do two things:
-1. **Give back worldly knowledge**: After the user shares something, enrich the conversation by connecting their idea to real-world context — relevant industry trends, research findings, existing solutions, market data, analogous examples from other domains, or lessons from similar initiatives. This should feel like talking to a knowledgeable mentor, not just an interviewer.
-2. **Extract deeper context**: Then ask 1-2 focused questions to draw out more specific detail, challenge assumptions gently, or explore an angle the user hasn't mentioned.
-
-Additional guidelines:
-- Be warm, intellectually curious, and encouraging
-- Responses can be 3-5 sentences of knowledge/context before your questions — share something genuinely useful
-- Build on what the user has shared; acknowledge it specifically before adding your insights
-- If an answer is vague, probe with a concrete example to spark more detail (e.g. "For instance, would this look like X or more like Y?")
-- When you have enough on one topic, naturally transition to the next
-- Do NOT number your questions or use bullet points — keep it conversational and flowing`;
+Your coaching style is focused and concise:
+- Keep responses short — 1-3 sentences maximum before your question
+- Ask one clear question at a time to draw out more detail
+- If the user's answer is thin, gently probe (e.g. "Can you be more specific about X?")
+- When the current topic feels sufficiently covered, ask if they're ready to move on
+- Be polite and professional, but not effusive — no lengthy affirmations or preamble
+- Do NOT use bullet points or numbered lists — keep it conversational
+- **Opening message only**: One short sentence asking the user to share their idea. Nothing else.`;
 }
 
 const EXTRACT_SCHEMA = {
@@ -76,7 +82,7 @@ router.post('/:id/coach', async (req, res) => {
     return res.status(400).json({ error: 'Conversation limit reached. This idea has a very long coaching history — consider starting a new idea to continue exploring.' });
   }
 
-  const { message } = req.body;
+  const { message, stage = 0 } = req.body;
 
   // Add user message if provided
   if (message?.trim()) {
@@ -102,7 +108,7 @@ router.post('/:id/coach', async (req, res) => {
 
     const model = genAI.getGenerativeModel({
       model: 'gemini-3.1-flash-lite-preview',
-      systemInstruction: buildSystemPrompt(idea)
+      systemInstruction: buildSystemPrompt(idea, stage)
     });
 
     const chat = model.startChat({ history });

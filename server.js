@@ -1,49 +1,46 @@
 require('dotenv').config();
 const express = require('express');
+const session = require('express-session');
 const path = require('path');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Optional basic auth — set AUTH_PASSWORD in .env to enable
-if (process.env.AUTH_PASSWORD) {
-  app.use((req, res, next) => {
-    const auth = req.headers.authorization;
-    if (!auth || !auth.startsWith('Basic ')) {
-      return res.status(401).set('WWW-Authenticate', 'Basic realm="Idea Platform"').send('Unauthorized');
-    }
-    const decoded = Buffer.from(auth.slice(6), 'base64').toString();
-    const pass = decoded.slice(decoded.indexOf(':') + 1);
-    if (pass !== process.env.AUTH_PASSWORD) {
-      return res.status(401).set('WWW-Authenticate', 'Basic realm="Idea Platform"').send('Unauthorized');
-    }
-    next();
-  });
-}
-
 app.use(express.json());
+app.use(session({
+  secret: process.env.SESSION_SECRET || 'dev-secret-change-in-production',
+  resave: false,
+  saveUninitialized: false,
+  cookie: { httpOnly: true, maxAge: 7 * 24 * 60 * 60 * 1000 }
+}));
+
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Routes
+// Auth routes — always public
+app.use('/api/auth', require('./src/routes/auth'));
+
+// All non-GET /api requests require a session
+app.use('/api', (req, res, next) => {
+  if (req.method === 'GET') return next();
+  if (!req.session?.userId) return res.status(401).json({ error: 'Authentication required' });
+  next();
+});
+
 app.use('/api/focus-areas', require('./src/routes/focusAreas'));
 app.use('/api/challenges', require('./src/routes/challenges'));
-app.use('/api/ideas', require('./src/routes/ideas')); // coach routes are mounted inside ideas router
+app.use('/api/ideas', require('./src/routes/ideas'));
 
-// SPA fallback (Express 5 requires named wildcard)
 app.get('/{*splat}', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-// Global error handler
 app.use((err, req, res, next) => {
   console.error(err);
   res.status(500).json({ error: 'Internal server error' });
 });
 
 if (require.main === module) {
-  app.listen(PORT, () => {
-    console.log(`Idea Platform running at http://localhost:${PORT}`);
-  });
+  app.listen(PORT, () => console.log(`Idea Platform running at http://localhost:${PORT}`));
 }
 
 module.exports = app;

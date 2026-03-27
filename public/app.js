@@ -67,6 +67,110 @@ function render(html) {
   document.getElementById('app').innerHTML = html;
 }
 
+/* ===== Auth ===== */
+let currentUser = null;
+function isAuth() { return !!currentUser; }
+
+async function checkAuth() {
+  try { currentUser = await api.get('/api/auth/me'); } catch { currentUser = null; }
+  updateHeaderAuth();
+}
+
+function updateHeaderAuth() {
+  const el = document.getElementById('header-auth');
+  if (!el) return;
+  if (currentUser) {
+    el.innerHTML = `<span class="util-link user-email">${esc(currentUser.email)}</span><button class="util-link" onclick="authLogout()">Log out</button>`;
+  } else {
+    el.innerHTML = `<a href="#" class="util-link btn-login" onclick="showAuthModal();return false">Log in</a>`;
+  }
+}
+
+function showAuthModal(defaultTab = 'login') {
+  modal.show('Welcome', `
+    <div class="auth-tabs">
+      <button class="auth-tab ${defaultTab === 'login' ? 'active' : ''}" id="tab-login" onclick="switchAuthTab('login')">Log in</button>
+      <button class="auth-tab ${defaultTab === 'register' ? 'active' : ''}" id="tab-register" onclick="switchAuthTab('register')">Create account</button>
+    </div>
+    <div id="auth-login-form" ${defaultTab !== 'login' ? 'hidden' : ''}>
+      <div class="form-group">
+        <label for="auth-email">Email</label>
+        <input id="auth-email" class="form-control" type="email" placeholder="you@example.com" autofocus>
+      </div>
+      <div class="form-group">
+        <label for="auth-password">Password</label>
+        <input id="auth-password" class="form-control" type="password" placeholder="••••••••">
+      </div>
+      <div id="auth-error" class="auth-error" hidden></div>
+      <div class="form-actions">
+        <button class="btn btn-ghost" onclick="modal.hide()">Cancel</button>
+        <button class="btn btn-primary" onclick="authLogin()">Log in</button>
+      </div>
+    </div>
+    <div id="auth-register-form" ${defaultTab !== 'register' ? 'hidden' : ''}>
+      <div class="form-group">
+        <label for="auth-reg-email">Email</label>
+        <input id="auth-reg-email" class="form-control" type="email" placeholder="you@example.com">
+      </div>
+      <div class="form-group">
+        <label for="auth-reg-password">Password</label>
+        <input id="auth-reg-password" class="form-control" type="password" placeholder="Min. 8 characters">
+      </div>
+      <div id="auth-reg-error" class="auth-error" hidden></div>
+      <div class="form-actions">
+        <button class="btn btn-ghost" onclick="modal.hide()">Cancel</button>
+        <button class="btn btn-primary" onclick="authRegister()">Create account</button>
+      </div>
+    </div>`, body => {
+    body.querySelectorAll('input').forEach(inp => inp.addEventListener('keydown', e => {
+      if (e.key !== 'Enter') return;
+      document.getElementById('auth-login-form').hidden ? authRegister() : authLogin();
+    }));
+  });
+}
+
+function switchAuthTab(tab) {
+  document.getElementById('auth-login-form').hidden = tab !== 'login';
+  document.getElementById('auth-register-form').hidden = tab !== 'register';
+  document.getElementById('tab-login').classList.toggle('active', tab === 'login');
+  document.getElementById('tab-register').classList.toggle('active', tab === 'register');
+}
+
+async function authLogin() {
+  const email = document.getElementById('auth-email')?.value?.trim();
+  const password = document.getElementById('auth-password')?.value;
+  const errEl = document.getElementById('auth-error');
+  errEl.hidden = true;
+  setModalLoading(true);
+  try {
+    currentUser = await api.post('/api/auth/login', { email, password });
+    modal.hide();
+    updateHeaderAuth();
+    route();
+  } catch (e) { setModalLoading(false); errEl.textContent = e.message; errEl.hidden = false; }
+}
+
+async function authRegister() {
+  const email = document.getElementById('auth-reg-email')?.value?.trim();
+  const password = document.getElementById('auth-reg-password')?.value;
+  const errEl = document.getElementById('auth-reg-error');
+  errEl.hidden = true;
+  setModalLoading(true);
+  try {
+    currentUser = await api.post('/api/auth/register', { email, password });
+    modal.hide();
+    updateHeaderAuth();
+    route();
+  } catch (e) { setModalLoading(false); errEl.textContent = e.message; errEl.hidden = false; }
+}
+
+async function authLogout() {
+  try { await api.post('/api/auth/logout', {}); } catch {}
+  currentUser = null;
+  updateHeaderAuth();
+  route();
+}
+
 /* ===== Breadcrumb ===== */
 function setBreadcrumb(items) {
   const bar = document.getElementById('breadcrumb-bar');
@@ -134,7 +238,7 @@ function route() {
 }
 
 window.addEventListener('hashchange', route);
-document.addEventListener('DOMContentLoaded', () => { modal.init(); route(); });
+document.addEventListener('DOMContentLoaded', () => { modal.init(); checkAuth().then(() => route()); });
 
 /* ===== Top-level view switcher (nav tabs) ===== */
 async function switchView(view) {
@@ -187,7 +291,7 @@ async function viewHome() {
         <span class="icon">🎯</span>
         <h3>No focus areas yet</h3>
         <p>Focus areas help you organise challenges around a theme or goal.</p>
-        <button class="btn btn-primary" onclick="showCreateFocusArea()">+ Create your first Focus Area</button>
+        ${isAuth() ? '<button class="btn btn-primary" onclick="showCreateFocusArea()">+ Create your first Focus Area</button>' : '<p>Log in to add focus areas.</p>'}
       </div>`;
 
     render(`
@@ -197,7 +301,7 @@ async function viewHome() {
           <div class="subtitle">Organise your challenges by theme or goal</div>
         </div>
         <div class="page-header-actions">
-          ${areas.length ? '<button class="btn btn-primary" onclick="showCreateFocusArea()">+ New Focus Area</button>' : ''}
+          ${isAuth() && areas.length ? '<button class="btn btn-primary" onclick="showCreateFocusArea()">+ New Focus Area</button>' : ''}
         </div>
       </div>
       ${areas.length ? `
@@ -456,7 +560,7 @@ async function viewFocusArea(id) {
         <span class="icon">🔍</span>
         <h3>No challenges yet</h3>
         <p>Challenges are problems or opportunities to tackle within this focus area.</p>
-        <button class="btn btn-primary" onclick="showCreateChallenge(${id})">+ Add a Challenge</button>
+        ${isAuth() ? `<button class="btn btn-primary" onclick="showCreateChallenge(${id})">+ Add a Challenge</button>` : ''}
       </div>`;
 
     render(`
@@ -466,9 +570,11 @@ async function viewFocusArea(id) {
           ${fa.description ? `<div class="subtitle">${esc(fa.description)}</div>` : ''}
         </div>
         <div class="page-header-actions">
-          <button class="btn btn-ghost btn-sm" onclick="showEditFocusArea(${id})">Edit</button>
-          <button class="btn btn-danger btn-sm" onclick="deleteFocusArea(${id})">Delete</button>
-          ${challenges.length ? `<button class="btn btn-primary" onclick="showCreateChallenge(${id})">+ New Challenge</button>` : ''}
+          ${isAuth() ? `
+            <button class="btn btn-ghost btn-sm" onclick="showEditFocusArea(${id})">Edit</button>
+            <button class="btn btn-danger btn-sm" onclick="deleteFocusArea(${id})">Delete</button>
+            ${challenges.length ? `<button class="btn btn-primary" onclick="showCreateChallenge(${id})">+ New Challenge</button>` : ''}
+          ` : ''}
         </div>
       </div>
       <div class="section">
@@ -598,7 +704,7 @@ async function viewChallenge(id) {
         <span class="icon">💡</span>
         <h3>No ideas yet</h3>
         <p>Add an idea and the AI coach will guide you through developing it.</p>
-        <button class="btn btn-primary" onclick="createIdea(${id}, this)">+ Add First Idea</button>
+        ${isAuth() ? `<button class="btn btn-primary" onclick="createIdea(${id}, this)">+ Add First Idea</button>` : ''}
       </div>`;
 
     render(`
@@ -608,9 +714,11 @@ async function viewChallenge(id) {
           ${ch.description ? `<div class="subtitle">${esc(ch.description)}</div>` : ''}
         </div>
         <div class="page-header-actions">
-          <button class="btn btn-ghost btn-sm" onclick="showEditChallenge(${id})">Edit</button>
-          <button class="btn btn-danger btn-sm" onclick="deleteChallenge(${id}, ${ch.focus_area_id})">Delete</button>
-          ${ideas.length ? `<button class="btn btn-primary" onclick="createIdea(${id}, this)">+ New Idea</button>` : ''}
+          ${isAuth() ? `
+            <button class="btn btn-ghost btn-sm" onclick="showEditChallenge(${id})">Edit</button>
+            <button class="btn btn-danger btn-sm" onclick="deleteChallenge(${id}, ${ch.focus_area_id})">Delete</button>
+            ${ideas.length ? `<button class="btn btn-primary" onclick="createIdea(${id}, this)">+ New Idea</button>` : ''}
+          ` : ''}
         </div>
       </div>
       <div class="section">
@@ -675,7 +783,23 @@ async function createIdea(challengeId, btn) {
 }
 
 /* ===== View: Idea Coach ===== */
-let coachState = { ideaId: null, streaming: false };
+const STAGES = [
+  { key: 'name',          label: 'Idea Name',         placeholder: 'A concise, memorable name…' },
+  { key: 'description',   label: 'Description',        placeholder: "What is this idea and what's the vision behind it?" },
+  { key: 'problem_what',  label: 'Problem — What',     placeholder: 'What specific problem does it solve?' },
+  { key: 'problem_who',   label: 'Problem — Who',      placeholder: 'Who is affected by this problem?' },
+  { key: 'problem_scale', label: 'Problem — Scale',    placeholder: 'How widespread or significant is this?' },
+  { key: 'benefits',      label: 'Potential Benefits', placeholder: 'What positive outcomes would this create?' },
+];
+
+let coachState = { ideaId: null, streaming: false, stage: 0, ideaData: {} };
+
+function computeInitialStage(idea) {
+  for (let i = 0; i < STAGES.length; i++) {
+    if (!idea[STAGES[i].key]?.trim()) return i;
+  }
+  return STAGES.length;
+}
 
 async function viewIdea(id) {
   setActiveNav('ideas');
@@ -690,7 +814,8 @@ async function viewIdea(id) {
       { label: idea.name || 'New Idea', href: `#/idea/${id}` }
     ]);
 
-    coachState = { ideaId: parseInt(id), streaming: false };
+    const initialStage = computeInitialStage(idea);
+    coachState = { ideaId: parseInt(id), streaming: false, stage: initialStage, ideaData: { ...idea } };
 
     render(`
       <div class="page-header" style="margin-bottom:1rem">
@@ -699,14 +824,26 @@ async function viewIdea(id) {
           <div class="subtitle">Challenge: <strong>${esc(idea.challenge_name)}</strong></div>
         </div>
         <div class="page-header-actions">
-          <button class="btn btn-danger btn-sm" onclick="deleteIdea(${id}, ${idea.challenge_id})">Delete Idea</button>
+          ${isAuth() ? `<button class="btn btn-danger btn-sm" onclick="deleteIdea(${id}, ${idea.challenge_id})">Delete Idea</button>` : ''}
         </div>
       </div>
       <div class="coach-layout">
+        <div class="idea-panel">
+          <div class="idea-panel-header">
+            <span>📋 Idea Summary</span>
+            <span id="stage-counter" class="stage-counter">${initialStage < STAGES.length ? 'Step ' + (initialStage + 1) + ' of ' + STAGES.length : 'Complete!'}</span>
+          </div>
+          <div class="stage-bar"><div class="stage-bar-fill" id="stage-bar-fill" style="width:${Math.min(initialStage / STAGES.length * 100, 100)}%"></div></div>
+          <div class="idea-panel-body" id="idea-panel-body"></div>
+        </div>
+        ${isAuth() ? `
         <div class="chat-panel">
           <div class="chat-header">
             <span class="coach-icon">🤖</span>
-            <h2>Idea Coach</h2>
+            <div class="chat-header-text">
+              <h2>Idea Coach</h2>
+              <div id="coach-stage-label" class="coach-stage-label">${initialStage < STAGES.length ? 'Exploring: ' + STAGES[initialStage].label : 'Idea complete!'}</div>
+            </div>
           </div>
           <div class="chat-messages" id="chat-messages"></div>
           <div class="chat-input-area">
@@ -714,66 +851,147 @@ async function viewIdea(id) {
             <button id="chat-send" class="chat-send" title="Send (Enter)">➤</button>
           </div>
         </div>
-        <div class="idea-panel">
-          <div class="idea-panel-header">📋 Idea Details</div>
-          <div class="idea-panel-body">
-            <div class="idea-field">
-              <label>Idea Name</label>
-              <textarea id="field-name" rows="1" placeholder="Will be filled as you chat…">${esc(idea.name)}</textarea>
-            </div>
-            <div class="idea-field">
-              <label>Description</label>
-              <textarea id="field-description" rows="5" placeholder="What is this idea?">${esc(idea.description)}</textarea>
-            </div>
-            <div class="idea-field">
-              <label>Problem — What</label>
-              <textarea id="field-problem_what" rows="2" placeholder="What problem does it solve?">${esc(idea.problem_what)}</textarea>
-            </div>
-            <div class="idea-field">
-              <label>Problem — Who</label>
-              <textarea id="field-problem_who" rows="2" placeholder="Who is affected?">${esc(idea.problem_who)}</textarea>
-            </div>
-            <div class="idea-field">
-              <label>Problem — Scale</label>
-              <textarea id="field-problem_scale" rows="2" placeholder="How significant is this problem?">${esc(idea.problem_scale)}</textarea>
-            </div>
-            <div class="idea-field">
-              <label>Potential Benefits</label>
-              <textarea id="field-benefits" rows="2" placeholder="What positive outcomes?">${esc(idea.benefits)}</textarea>
-            </div>
-          </div>
-          <div class="idea-panel-footer">
-            <button class="btn btn-ghost btn-sm" style="flex:1" onclick="saveIdeaFields(${id})">💾 Save Fields</button>
-          </div>
-        </div>
+        ` : `
+        <div class="readonly-banner">
+          <span>Log in to develop this idea with the AI coach</span>
+          <button class="btn btn-primary btn-sm" onclick="showAuthModal()">Log in</button>
+        </div>`}
       </div>`);
 
-    const messagesEl = document.getElementById('chat-messages');
-    if (idea.conversation && idea.conversation.length > 0) {
-      idea.conversation.forEach(msg => appendMessage(msg.role, msg.content));
-      messagesEl.scrollTop = messagesEl.scrollHeight;
-    } else {
-      await sendCoachMessage(id, null);
+    renderIdeaPanel(coachState.ideaData, initialStage, id);
+
+    if (isAuth()) {
+      const messagesEl = document.getElementById('chat-messages');
+      if (idea.conversation && idea.conversation.length > 0) {
+        idea.conversation.forEach(msg => appendMessage(msg.role, msg.content));
+        messagesEl.scrollTop = messagesEl.scrollHeight;
+      } else {
+        await sendCoachMessage(id, null);
+      }
+      const input = document.getElementById('chat-input');
+      const sendBtn = document.getElementById('chat-send');
+      input.addEventListener('keydown', e => {
+        if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(id); }
+      });
+      input.addEventListener('input', () => {
+        input.style.height = 'auto';
+        input.style.height = Math.min(input.scrollHeight, 120) + 'px';
+      });
+      sendBtn.addEventListener('click', () => handleSend(id));
     }
-
-    const input = document.getElementById('chat-input');
-    const sendBtn = document.getElementById('chat-send');
-    input.addEventListener('keydown', e => {
-      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(id); }
-    });
-    input.addEventListener('input', () => {
-      input.style.height = 'auto';
-      input.style.height = Math.min(input.scrollHeight, 120) + 'px';
-    });
-    sendBtn.addEventListener('click', () => handleSend(id));
-
-    ['name','description','problem_what','problem_who','problem_scale','benefits'].forEach(f => {
-      const el = document.getElementById(`field-${f}`);
-      if (el) el.addEventListener('change', () => saveIdeaFields(id));
-    });
   } catch (e) {
     render(`<div class="empty-state"><h3>Something went wrong</h3><p>${esc(e.message)}</p></div>`);
   }
+}
+
+function renderIdeaPanel(ideaData, stage, ideaId) {
+  const body = document.getElementById('idea-panel-body');
+  if (!body) return;
+
+  const counter = document.getElementById('stage-counter');
+  const fill = document.getElementById('stage-bar-fill');
+
+  if (!isAuth()) {
+    // Read-only: show all fields as text, no editing
+    const filledCount = STAGES.filter(s => ideaData[s.key]?.trim()).length;
+    if (counter) counter.textContent = `${filledCount} of ${STAGES.length} complete`;
+    if (fill) fill.style.width = `${filledCount / STAGES.length * 100}%`;
+    let html = '<div class="fields-done-grid">';
+    STAGES.forEach(s => {
+      const val = ideaData[s.key] || '';
+      html += `<div class="field-done">
+        <div class="field-done-header"><span class="field-done-label">${s.label}</span></div>
+        <div class="field-done-value">${val ? esc(val) : '<em>Not yet captured</em>'}</div>
+      </div>`;
+    });
+    html += '</div>';
+    body.innerHTML = html;
+    return;
+  }
+
+  if (counter) counter.textContent = stage < STAGES.length ? `Step ${stage + 1} of ${STAGES.length}` : 'Complete!';
+  if (fill) fill.style.width = `${Math.min(stage / STAGES.length * 100, 100)}%`;
+
+  let html = '';
+
+  if (stage > 0) {
+    html += `<div class="fields-done-grid">`;
+    STAGES.slice(0, stage).forEach((s, i) => {
+      const val = ideaData[s.key] || '';
+      html += `<div class="field-done" onclick="jumpToStage(${i}, ${ideaId})">
+        <div class="field-done-header">
+          <span class="field-done-label">✓ ${s.label}</span>
+          <span class="field-edit-hint">edit</span>
+        </div>
+        <div class="field-done-value">${val ? esc(val) : '<em>Empty</em>'}</div>
+      </div>`;
+    });
+    html += `</div>`;
+  }
+
+  if (stage < STAGES.length) {
+    const s = STAGES[stage];
+    const val = ideaData[s.key] || '';
+    const rows = s.key === 'description' ? 5 : 3;
+    html += `<div class="field-current">
+      <div class="field-current-label">📝 ${s.label}</div>
+      <textarea id="field-${s.key}" class="field-current-textarea" rows="${rows}" placeholder="${s.placeholder}">${esc(val)}</textarea>
+      <button class="btn btn-primary btn-sm field-next-btn" onclick="advanceStage(${ideaId})">
+        ${stage === STAGES.length - 1 ? '✓ Complete idea' : 'Looks good, next topic →'}
+      </button>
+    </div>`;
+    const upcoming = STAGES.slice(stage + 1);
+    if (upcoming.length) {
+      html += `<div class="field-upcoming-group">${upcoming.map(s => `<span class="field-upcoming-pill">${s.label}</span>`).join('')}</div>`;
+    }
+  } else {
+    html += `<div class="stage-complete">
+      <div class="stage-complete-icon">🎉</div>
+      <div class="stage-complete-text">Idea fully developed!</div>
+      <button class="btn btn-ghost btn-sm" onclick="saveIdeaFields(${ideaId})">💾 Save</button>
+    </div>`;
+  }
+
+  body.innerHTML = html;
+
+  if (stage < STAGES.length) {
+    const el = document.getElementById(`field-${STAGES[stage].key}`);
+    if (el) el.addEventListener('change', () => saveIdeaFields(ideaId));
+  }
+}
+
+function updateChatStageLabel(stage) {
+  const el = document.getElementById('coach-stage-label');
+  if (el) el.textContent = stage < STAGES.length ? `Exploring: ${STAGES[stage].label}` : 'Idea complete!';
+}
+
+async function advanceStage(ideaId) {
+  const currentKey = STAGES[coachState.stage]?.key;
+  if (currentKey) {
+    const el = document.getElementById(`field-${currentKey}`);
+    if (el) coachState.ideaData[currentKey] = el.value.trim();
+  }
+  await saveIdeaFields(ideaId);
+  coachState.stage = Math.min(coachState.stage + 1, STAGES.length);
+  renderIdeaPanel(coachState.ideaData, coachState.stage, ideaId);
+  updateChatStageLabel(coachState.stage);
+  if (coachState.stage < STAGES.length) {
+    await sendCoachMessage(ideaId, `That looks good! Let's move on to: ${STAGES[coachState.stage].label}`);
+  } else {
+    await sendCoachMessage(ideaId, `I'm happy with all the sections. Please give me an encouraging summary of my fully developed idea.`);
+  }
+}
+
+function jumpToStage(stage, ideaId) {
+  const currentKey = STAGES[coachState.stage]?.key;
+  if (currentKey) {
+    const el = document.getElementById(`field-${currentKey}`);
+    if (el) coachState.ideaData[currentKey] = el.value.trim();
+  }
+  coachState.stage = stage;
+  renderIdeaPanel(coachState.ideaData, stage, ideaId);
+  updateChatStageLabel(stage);
+  document.getElementById('chat-input')?.focus();
 }
 
 function appendMessage(role, content, isStreaming = false) {
@@ -830,7 +1048,7 @@ async function sendCoachMessage(ideaId, message) {
     const resp = await fetch(`/api/ideas/${ideaId}/coach`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message: message || '' })
+      body: JSON.stringify({ message: message || '', stage: coachState.stage })
     });
     if (!resp.ok) throw new Error('Coach request failed');
 
@@ -869,14 +1087,8 @@ async function sendCoachMessage(ideaId, message) {
 async function triggerExtract(ideaId) {
   try {
     const fields = await api.post(`/api/ideas/${ideaId}/extract`, {});
-    ['name','description','problem_what','problem_who','problem_scale','benefits'].forEach(f => {
-      const el = document.getElementById(`field-${f}`);
-      if (el && fields[f] && fields[f] !== el.value) {
-        el.value = fields[f];
-        el.classList.add('updated');
-        setTimeout(() => el.classList.remove('updated'), 1200);
-      }
-    });
+    coachState.ideaData = { ...coachState.ideaData, ...fields };
+    renderIdeaPanel(coachState.ideaData, coachState.stage, ideaId);
     if (fields.name) {
       const h1 = document.querySelector('.page-header-text h1');
       if (h1) h1.textContent = fields.name;
@@ -885,11 +1097,10 @@ async function triggerExtract(ideaId) {
 }
 
 async function saveIdeaFields(id) {
-  const fields = ['name','description','problem_what','problem_who','problem_scale','benefits'];
   const body = {};
-  fields.forEach(f => {
-    const el = document.getElementById(`field-${f}`);
-    if (el) body[f] = el.value.trim();
+  STAGES.forEach(s => {
+    const el = document.getElementById(`field-${s.key}`);
+    body[s.key] = el ? el.value.trim() : (coachState.ideaData[s.key] || '');
   });
   try { await api.put(`/api/ideas/${id}`, body); }
   catch (e) { console.warn('Save failed:', e.message); }
