@@ -204,10 +204,10 @@ describe('Ideas API', () => {
     const created = await request(app).post(`/api/challenges/${chId}/ideas`).send({});
     const res = await request(app)
       .put(`/api/ideas/${created.body.id}`)
-      .send({ name: 'Great Idea', description: 'Does things', benefits: 'Many' });
+      .send({ name: 'Great Idea', description: 'Does things', hypothesis: 'We believe...' });
     assert.equal(res.status, 200);
     assert.equal(res.body.name, 'Great Idea');
-    assert.equal(res.body.benefits, 'Many');
+    assert.equal(res.body.hypothesis, 'We believe...');
   });
 
   it('PUT /api/ideas/:id/conversation saves conversation array', async () => {

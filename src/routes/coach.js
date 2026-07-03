@@ -5,30 +5,46 @@ const db = require('../database');
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
+// Keep key/label in sync with STAGES in public/app.js (~line 786) — no shared
+// module boundary between server and the plain-<script> frontend in this stack.
 const STAGES = [
-  { key: 'name',          label: 'Idea Name',         instruction: 'Help the user find a concise, memorable name. Explore a few options together, discuss what different names convey, and help them settle on something that captures the essence of the idea.' },
-  { key: 'description',   label: 'Description',        instruction: 'Build a rich understanding of what the idea is and the vision behind it. Ask about how it works, what makes it different, and what inspired it. The goal is two substantial paragraphs of insight.' },
-  { key: 'problem_what',  label: 'Problem — What',     instruction: 'Get specific about the problem being solved. Push past vague answers — ask for concrete examples, specific pain points, and what currently happens without this solution.' },
-  { key: 'problem_who',   label: 'Problem — Who',      instruction: 'Identify exactly who is affected. Explore demographics, contexts, and specific groups. Help the user get precise rather than saying "everyone".' },
-  { key: 'problem_scale', label: 'Problem — Scale',    instruction: 'Explore the significance and breadth of this problem. Share any relevant statistics or research you know about. Help the user articulate how widespread or impactful this problem truly is.' },
-  { key: 'benefits',      label: 'Potential Benefits', instruction: 'Explore the positive outcomes this idea would create. Go beyond the obvious — think about second-order effects, who benefits most, and what change in the world this idea enables.' },
+  { key: 'problem_statement', label: 'Problem Statement', instruction: 'Help the user articulate a sharp problem statement: a specific target user, a specific pain they experience, and why it matters — the consequence of the problem going unsolved. Push past vague claims like "everyone has this problem" — ask for a concrete example or moment where the pain showed up. Ground your questions in what they already told you their idea is; don\'t make them re-explain the idea itself.' },
+  { key: 'value_proposition', label: 'Value Proposition', instruction: 'Help the user build a value proposition in this shape: "For [target user] who has [problem], [idea] is a [category] that [key benefit], unlike [status quo / current alternative], it [differentiator]." Push them to name a real current alternative (even "doing nothing" or a spreadsheet counts) and a genuinely differentiating benefit, not a generic one.' },
+  { key: 'hypothesis', label: 'Hypothesis', instruction: 'Help the user state a falsifiable hypothesis in this shape: "We believe [target user] will [specific behavior] because [reason]; we\'ll know it\'s true when [measurable signal]." Push for a concrete, observable signal (a number, an action, a rate) rather than a vague feeling of success.' },
 ];
 
-function buildSystemPrompt(challenge, stage) {
+// Infer which topic the coach should focus on next from which fields are
+// already filled — server-owned since there's no more client "next" button
+// driving stage progression.
+function inferCurrentStage(idea) {
+  for (let i = 0; i < STAGES.length; i++) {
+    if (!idea[STAGES[i].key]?.trim()) return i;
+  }
+  return STAGES.length;
+}
+
+function buildSystemPrompt(idea, stage) {
   const currentStage = STAGES[stage];
-  const stageFocus = currentStage
-    ? `\n\n**Current coaching focus**: Stage ${stage + 1} of ${STAGES.length} — "${currentStage.label}"
+
+  let stageFocus;
+  if (!idea.description?.trim()) {
+    stageFocus = `\n\n**This is the very first message.** Ask the user to describe their idea in their own words — what it is, roughly, and why they're excited about it. Keep it to one short, warm sentence. Do not ask about the problem statement, value proposition, or hypothesis yet.`;
+  } else if (currentStage) {
+    stageFocus = `\n\n**Current coaching focus**: Stage ${stage + 1} of ${STAGES.length} — "${currentStage.label}"
 ${currentStage.instruction}
 
-Stay focused on this one topic until it is well covered. The user will tell you when they are ready to move on.`
-    : `\n\n**All stages complete.** Give the user a warm, encouraging summary of their fully developed idea, highlighting its strengths.`;
+Stay focused on this one topic until it is well covered. The user will tell you when they are ready to move on.`;
+  } else {
+    stageFocus = `\n\n**All three sections are developed.** Let the user know their idea is fully shaped and a pitch has been synthesized from their answers — invite them to keep refining any section if they'd like, or ask a warm wrap-up question.`;
+  }
 
   return `You are an expert idea coach with broad knowledge of business, technology, social trends, and research. You help people develop their ideas through a genuinely bi-directional conversation.${stageFocus}
 
 Context:
-- Challenge they are addressing: "${challenge.name}"
-- Challenge description: "${challenge.challenge_description || 'Not specified'}"
-- Focus area: "${challenge.focus_area_name}"
+- Challenge they are addressing: "${idea.challenge_name}"
+- Challenge description: "${idea.challenge_description || 'Not specified'}"
+- Focus area: "${idea.focus_area_name}"
+- The user's idea, in their own words so far: "${idea.description || '(not yet described — this is the opening message)'}"
 
 Your coaching style is focused and concise:
 - Keep responses short — 1-3 sentences maximum before your question
@@ -36,21 +52,19 @@ Your coaching style is focused and concise:
 - If the user's answer is thin, gently probe (e.g. "Can you be more specific about X?")
 - When the current topic feels sufficiently covered, ask if they're ready to move on
 - Be polite and professional, but not effusive — no lengthy affirmations or preamble
-- Do NOT use bullet points or numbered lists — keep it conversational
-- **Opening message only**: One short sentence asking the user to share their idea. Nothing else.`;
+- Do NOT use bullet points or numbered lists — keep it conversational`;
 }
 
 const EXTRACT_SCHEMA = {
   type: SchemaType.OBJECT,
   properties: {
-    name:          { type: SchemaType.STRING, description: 'The idea name if mentioned' },
-    description:   { type: SchemaType.STRING, description: 'A rich two-paragraph description of the idea. First paragraph: what the idea is and how it works. Second paragraph: the context, motivation, or vision behind it. Write in full sentences with detail.' },
-    problem_what:  { type: SchemaType.STRING, description: 'What problem it solves' },
-    problem_who:   { type: SchemaType.STRING, description: 'Who is affected by the problem' },
-    problem_scale: { type: SchemaType.STRING, description: 'How significant/widespread the problem is' },
-    benefits:      { type: SchemaType.STRING, description: 'Potential benefits of the idea' }
+    name:               { type: SchemaType.STRING, description: 'The idea name if mentioned' },
+    description:        { type: SchemaType.STRING, description: 'A rich two-paragraph description of the idea, grounded in the user\'s own words from the opening exchange and any elaboration since. First paragraph: what the idea is and how it works. Second paragraph: the context, motivation, or vision behind it.' },
+    problem_statement:  { type: SchemaType.STRING, description: 'The problem statement: target user, specific pain, and why it matters — following a target-user/pain/consequence shape.' },
+    value_proposition:  { type: SchemaType.STRING, description: 'The value proposition in the shape: for [target user] who has [problem], [idea] is a [category] that [benefit], unlike [alternative], it [differentiator].' },
+    hypothesis:         { type: SchemaType.STRING, description: 'The falsifiable hypothesis in the shape: we believe [user] will [behavior] because [reason]; we\'ll know it\'s true when [signal].' }
   },
-  required: ['name', 'description', 'problem_what', 'problem_who', 'problem_scale', 'benefits']
+  required: ['name', 'description', 'problem_statement', 'value_proposition', 'hypothesis']
 };
 
 // Convert stored conversation (role: user/assistant) to Gemini format (role: user/model)
@@ -82,7 +96,8 @@ router.post('/:id/coach', async (req, res) => {
     return res.status(400).json({ error: 'Conversation limit reached. This idea has a very long coaching history — consider starting a new idea to continue exploring.' });
   }
 
-  const { message, stage = 0 } = req.body;
+  const { message } = req.body;
+  const stage = inferCurrentStage(idea);
 
   // Add user message if provided
   if (message?.trim()) {
@@ -167,22 +182,63 @@ router.post('/:id/extract', async (req, res) => {
     // Update idea fields — only overwrite with non-empty extracted values
     const existing = db.prepare('SELECT * FROM ideas WHERE id = ?').get(req.params.id);
     const updates = {};
-    const fields = ['name', 'description', 'problem_what', 'problem_who', 'problem_scale', 'benefits'];
+    const fields = ['name', 'description', 'problem_statement', 'value_proposition', 'hypothesis'];
     fields.forEach(f => {
       updates[f] = extracted[f]?.trim() || existing[f] || '';
     });
 
     db.prepare(`
       UPDATE ideas SET
-        name = ?, description = ?, problem_what = ?, problem_who = ?,
-        problem_scale = ?, benefits = ?, updated_at = datetime('now')
+        name = ?, description = ?, problem_statement = ?, value_proposition = ?,
+        hypothesis = ?, updated_at = datetime('now')
       WHERE id = ?
-    `).run(updates.name, updates.description, updates.problem_what, updates.problem_who,
-           updates.problem_scale, updates.benefits, req.params.id);
+    `).run(updates.name, updates.description, updates.problem_statement, updates.value_proposition,
+           updates.hypothesis, req.params.id);
 
     res.json(updates);
   } catch (err) {
     console.error('Extract error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/ideas/:id/pitch
+// Synthesizes a tight, compelling pitch from name/description/problem_statement/
+// value_proposition/hypothesis. This is a distinct generative call over already-
+// extracted structured fields (not conversation extraction) — a pitch is rewritten,
+// persuasive prose that's never said verbatim in the chat, so it needs its own
+// call, and it's only meaningful once the three core fields are ready.
+router.post('/:id/pitch', async (req, res) => {
+  const idea = db.prepare('SELECT * FROM ideas WHERE id = ?').get(req.params.id);
+  if (!idea) return res.status(404).json({ error: 'Not found' });
+
+  if (!idea.problem_statement?.trim() || !idea.value_proposition?.trim() || !idea.hypothesis?.trim()) {
+    return res.json({ pitch: '' });
+  }
+
+  try {
+    const pitchModel = genAI.getGenerativeModel({ model: 'gemini-3.1-flash-lite-preview' });
+
+    const result = await pitchModel.generateContent(
+      `Write a compelling, tight elevator pitch (3-5 sentences, no bullet points, no markdown formatting, no headers, no preamble) for this idea, synthesizing the following into a cohesive, persuasive narrative:
+
+Name: ${idea.name || '(untitled)'}
+Description: ${idea.description}
+Problem Statement: ${idea.problem_statement}
+Value Proposition: ${idea.value_proposition}
+Hypothesis: ${idea.hypothesis}
+
+Return only the pitch text.`
+    );
+
+    const pitch = result.response.text().trim();
+
+    db.prepare(`UPDATE ideas SET pitch = ?, updated_at = datetime('now') WHERE id = ?`)
+      .run(pitch, req.params.id);
+
+    res.json({ pitch });
+  } catch (err) {
+    console.error('Pitch synthesis error:', err);
     res.status(500).json({ error: err.message });
   }
 });

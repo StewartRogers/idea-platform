@@ -38,8 +38,8 @@ router.get('/:id/ideas', (req, res) => {
   const ch = db.prepare('SELECT id FROM challenges WHERE id = ?').get(req.params.id);
   if (!ch) return res.status(404).json({ error: 'Challenge not found' });
   const rows = db.prepare(`
-    SELECT id, challenge_id, name, description, problem_what, problem_who,
-           problem_scale, benefits, created_at, updated_at
+    SELECT id, challenge_id, name, description, problem_statement, value_proposition,
+           hypothesis, pitch, created_at, updated_at
     FROM ideas
     WHERE challenge_id = ?
     ORDER BY created_at ASC

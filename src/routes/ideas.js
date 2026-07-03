@@ -19,7 +19,9 @@ router.get('/:id', (req, res) => {
 
 // Update idea fields
 router.put('/:id', (req, res) => {
-  const fields = ['name', 'description', 'problem_what', 'problem_who', 'problem_scale', 'benefits'];
+  // pitch is deliberately excluded — it's a generated artifact (see POST /:id/pitch),
+  // not hand-editable
+  const fields = ['name', 'description', 'problem_statement', 'value_proposition', 'hypothesis'];
   const existing = db.prepare('SELECT * FROM ideas WHERE id = ?').get(req.params.id);
   if (!existing) return res.status(404).json({ error: 'Not found' });
   // name is optional on ideas (they start untitled) but if provided must not be blank whitespace only
@@ -29,11 +31,11 @@ router.put('/:id', (req, res) => {
 
   db.prepare(`
     UPDATE ideas SET
-      name = ?, description = ?, problem_what = ?, problem_who = ?,
-      problem_scale = ?, benefits = ?, updated_at = datetime('now')
+      name = ?, description = ?, problem_statement = ?, value_proposition = ?,
+      hypothesis = ?, updated_at = datetime('now')
     WHERE id = ?
-  `).run(updates.name, updates.description, updates.problem_what, updates.problem_who,
-         updates.problem_scale, updates.benefits, req.params.id);
+  `).run(updates.name, updates.description, updates.problem_statement, updates.value_proposition,
+         updates.hypothesis, req.params.id);
 
   const row = db.prepare('SELECT * FROM ideas WHERE id = ?').get(req.params.id);
   row.conversation = JSON.parse(row.conversation || '[]');
