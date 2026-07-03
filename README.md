@@ -11,7 +11,7 @@ A platform for developing ideas through structured feedback, powered by AI-drive
   - Problem definition (what, who, and scale)
   - Potential benefits
   - Conversation history
-- **Optional Authentication**: Basic HTTP auth for protecting your platform (configure via `AUTH_PASSWORD` in `.env`)
+- **Email/Password Authentication**: Session-based auth with bcrypt password hashing; all non-GET `/api` requests require a logged-in session
 - **SQLite Database**: Persistent storage with WAL mode for reliability
 - **REST API**: Full API for managing focus areas, challenges, and ideas
 
@@ -21,7 +21,7 @@ A platform for developing ideas through structured feedback, powered by AI-drive
 - **Database**: SQLite 3 with better-sqlite3
 - **Frontend**: JavaScript (75%), CSS (22%), HTML (3%)
 - **AI**: Google Gemini API for coaching
-- **Authentication**: Optional HTTP Basic Auth
+- **Authentication**: `express-session` + `bcryptjs` (email/password, session cookie)
 - **Environment**: Dotenv for configuration
 
 ## Quick Start
@@ -52,7 +52,7 @@ A platform for developing ideas through structured feedback, powered by AI-drive
    Edit `.env` and add:
    - `GEMINI_API_KEY`: Your Google Gemini API key
    - `PORT`: Server port (default: 3000)
-   - `AUTH_PASSWORD`: (Optional) Password for basic auth
+   - `SESSION_SECRET`: Secret used to sign session cookies (set a strong value in production)
 
 4. **Start the server**
    ```bash
@@ -71,9 +71,18 @@ A platform for developing ideas through structured feedback, powered by AI-drive
 |----------|----------|---------|-------------|
 | `GEMINI_API_KEY` | Yes | - | Google Gemini API key for AI coaching |
 | `PORT` | No | 3000 | Server port |
-| `AUTH_PASSWORD` | No | - | If set, enables HTTP Basic Auth with this password |
+| `SESSION_SECRET` | No | `dev-secret-change-in-production` | Secret used to sign session cookies — always set explicitly in production |
 
 ## API Reference
+
+### Auth
+
+- `POST /api/auth/register` - Create an account (`email`, `password`; min 8 characters) and start a session
+- `POST /api/auth/login` - Log in with `email`/`password`, starts a session
+- `POST /api/auth/logout` - Destroy the current session
+- `GET /api/auth/me` - Get the current session's user, or `null` if not logged in
+
+All `/api/auth` routes are public. Every other non-GET `/api/*` request requires an active session (401 otherwise); GET requests are unauthenticated.
 
 ### Focus Areas
 
@@ -120,6 +129,12 @@ const reader = response.body.getReader();
 
 ## Database Schema
 
+### users
+- `id` - Primary key
+- `email` - Unique, normalized lowercase
+- `password_hash` - bcrypt hash
+- `created_at` - Timestamp
+
 ### focus_areas
 - `id` - Primary key
 - `name` - Focus area name
@@ -150,15 +165,16 @@ const reader = response.body.getReader();
 
 ```
 idea-platform/
-├── server.js              # Express server setup
+├── server.js              # Express server setup, session middleware, auth gate
 ├── src/
 │   ├── database.js        # SQLite initialization & schema
 │   └── routes/
+│       ├── auth.js        # Register/login/logout/me (session-based)
 │       ├── focusAreas.js  # Focus areas endpoints
 │       ├── challenges.js  # Challenges endpoints
 │       ├── ideas.js       # Ideas endpoints
 │       └── coach.js       # AI coaching endpoint
-├── public/                # Frontend static files
+├── public/                # Frontend static files (app.js, style.css, index.html)
 ├── tests/
 │   └── api.test.js       # API tests
 ├── .env.example          # Example environment variables
@@ -167,7 +183,8 @@ idea-platform/
 
 ## Security
 
-- **Optional Authentication**: Enable basic HTTP auth by setting `AUTH_PASSWORD`
+- **Authentication**: Email/password accounts with bcrypt-hashed passwords; sessions stored server-side via `express-session`, session cookie is `httpOnly`
+- **Authorization**: All non-GET `/api/*` routes require an authenticated session; `/api/auth/*` is always public
 - **Database Security**: Foreign key constraints enabled, WAL mode for crash recovery
 - **Input Validation**: Request bodies validated before processing
 
